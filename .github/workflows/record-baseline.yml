@@ -1,0 +1,74 @@
+name: GoldenGate record baseline
+
+# When a release is merged to main (or tagged), evaluate it and, if it ships,
+# commit its run as the new baseline used by every future pull request.
+on:
+  push:
+    branches: [main]
+    tags: ["v*", "release-*"]
+    paths-ignore: ["baselines/**", "**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: goldengate-baseline
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GOLDENGATE_JUDGE_MODE: auto
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: pip install -e . -c requirements-lock.txt
+
+      - name: Read release
+        id: release
+        run: |
+          python - <<'EOF' >> "$GITHUB_OUTPUT"
+          import yaml
+          cfg = yaml.safe_load(open("release.yaml"))
+          for key in ("release", "system", "golden"):
+              print(f"{key}={cfg[key]}")
+          EOF
+
+      - name: Evaluate against the current baseline
+        run: |
+          if [ -f baselines/baseline.json ]; then goldengate baseline import baselines/baseline.json; fi
+          goldengate run --system "${{ steps.release.outputs.system }}" --release "${{ steps.release.outputs.release }}" --golden "${{ steps.release.outputs.golden }}"
+
+      - name: Require SHIP before recording
+        run: goldengate gate --run "${{ steps.release.outputs.release }}"
+
+      - name: Record new baseline
+        run: |
+          goldengate baseline set --release "${{ steps.release.outputs.release }}"
+          goldengate baseline export baselines/baseline.json
+          goldengate report --run "${{ steps.release.outputs.release }}" --format md --output baselines/BASELINE.md
+
+      - name: Commit baseline
+        run: |
+          git config user.name "goldengate-bot"
+          git config user.email "goldengate-bot@users.noreply.github.com"
+          git add baselines/
+          if git diff --cached --quiet; then
+            echo "Baseline unchanged"
+          else
+            git commit -m "chore(goldengate): record baseline ${{ steps.release.outputs.release }} [skip ci]"
+            git push origin HEAD:main
+          fi

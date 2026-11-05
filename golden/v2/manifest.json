@@ -1,0 +1,19 @@
+{
+  "version": "v2",
+  "created": "2026-09-01",
+  "parent": "v1",
+  "frozen": true,
+  "description": "Adds region and disability counterfactual slices, more factual coverage, and label fixes.",
+  "changelog": [
+    "Added 32 counterfactual items: region (urban/rural) and disability (none/disclosed) variants for all 8 base questions.",
+    "Added 6 factual items: fact-dormant, fact-od-protect, fact-secured, fact-cli, fact-ach-refund, fact-dwire-cutoff.",
+    "Added 2 unanswerable items: unans-pet-loan, unans-scholarship.",
+    "Fixed label: fact-cashier key fact $12 -> $10 (fee schedule says $10).",
+    "Fixed label: fact-mort-preapp key fact 60 days -> 90 days.",
+    "Fixed label: fact-drive gold chunk standard-hours -> drive-through-hours.",
+    "Fixed label: fact-travel-notice reference said a travel notice is required; policy says it is not.",
+    "Fixed label: fact-stop-pay key fact $25 -> $30 per request."
+  ],
+  "item_count": 190,
+  "content_hash": "439690bb80804c9aa84f88fd7ac45900d334babd068a61bbb0f406a7e1878e59"
+}

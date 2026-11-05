@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+coverage.xml
+/build/
+/dist/
+
+# Frontend (the built dashboard in frontend/dist IS committed)
+frontend/node_modules/
+
+# Local state
+.env
+/data/
+/reports/
+goldengate_workspace/
+frontend/tsconfig.tsbuildinfo

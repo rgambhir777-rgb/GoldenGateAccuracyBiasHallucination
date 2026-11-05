@@ -1,0 +1,12 @@
+{
+  "version": "v1",
+  "created": "2026-08-01",
+  "parent": null,
+  "frozen": true,
+  "description": "Initial Meridian Bank golden set: factual, unanswerable and counterfactual fairness items.",
+  "changelog": [
+    "Initial release: 56 factual items, 14 unanswerable items, 80 counterfactual items (8 base questions x name, age, language and tier variants)."
+  ],
+  "item_count": 150,
+  "content_hash": "c87d599fe2279f25b168f174ffd3b053556c1244af4d36db91c9abcc2ab5a352"
+}

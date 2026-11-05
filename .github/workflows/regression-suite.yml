@@ -1,0 +1,113 @@
+name: GoldenGate regression suite
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: goldengate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    env:
+      # The LLM judge is used automatically when one of these secrets exists; otherwise the offline judge runs.
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GOLDENGATE_JUDGE_MODE: auto
+      PYTHONIOENCODING: utf-8
+      COLUMNS: "160"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" -c requirements-lock.txt
+
+      - name: Unit tests
+        run: pytest tests/unit --cov=goldengate --cov-report=term --cov-report=xml:reports/coverage.xml --junitxml=reports/unit-tests.xml
+
+      - name: Read release under test
+        id: release
+        run: |
+          python - <<'EOF' >> "$GITHUB_OUTPUT"
+          import yaml
+          cfg = yaml.safe_load(open("release.yaml"))
+          for key in ("release", "system", "golden", "baseline_release"):
+              print(f"{key}={cfg[key]}")
+          EOF
+
+      - name: Validate golden set
+        run: goldengate golden validate
+
+      - name: Load baseline
+        run: |
+          if [ -f baselines/baseline.json ]; then
+            goldengate baseline import baselines/baseline.json
+          else
+            echo "No committed baseline; evaluating ${{ steps.release.outputs.baseline_release }}"
+            goldengate run --system "${{ steps.release.outputs.baseline_release }}" --golden "${{ steps.release.outputs.golden }}"
+            goldengate baseline set --release "${{ steps.release.outputs.baseline_release }}"
+          fi
+
+      - name: Run suite for the release in this PR
+        run: goldengate run --system "${{ steps.release.outputs.system }}" --release "${{ steps.release.outputs.release }}" --golden "${{ steps.release.outputs.golden }}"
+
+      - name: Compare with baseline
+        run: goldengate compare --baseline baseline --current "${{ steps.release.outputs.release }}"
+
+      - name: Reports
+        run: |
+          mkdir -p reports
+          R="${{ steps.release.outputs.release }}"
+          goldengate report --run "$R" --format html  --output reports/goldengate-report.html
+          goldengate report --run "$R" --format md    --output reports/pr-comment.md
+          goldengate report --run "$R" --format json  --output reports/goldengate-report.json
+          goldengate report --run "$R" --format junit --output reports/goldengate-gates.xml
+          cat reports/pr-comment.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Gates as pytest (JUnit)
+        continue-on-error: true
+        env:
+          GOLDENGATE_RUN: ${{ steps.release.outputs.release }}
+        run: pytest tests/evals --junitxml=reports/release-gates.xml -q --tb=short
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: goldengate-report
+          path: reports/
+
+      - name: Post or update PR comment
+        if: github.event_name == 'pull_request'
+        continue-on-error: true  # fork PRs get a read-only token
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('reports/pr-comment.md', 'utf8');
+            const marker = '<!-- goldengate-report -->';
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Enforce release gates
+        run: goldengate gate --run "${{ steps.release.outputs.release }}"

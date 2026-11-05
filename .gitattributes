@@ -1,0 +1,3 @@
+# Store and check out every file byte-for-byte. Frozen golden sets are verified
+# by content hash, so line-ending conversion (core.autocrlf) would break them.
+* -text

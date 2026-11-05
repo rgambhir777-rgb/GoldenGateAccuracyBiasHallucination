@@ -1,0 +1,1 @@
+"""GoldenGate cli package."""

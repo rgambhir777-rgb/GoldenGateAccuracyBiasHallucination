@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoldenGate report – {{ run.meta.release.release_id }}</title>
+<style>
+  :root { --ink:#111827; --muted:#6b7280; --line:#e5e7eb; --bg:#f8fafc; --card:#ffffff; --green:#16a34a;
+          --green-bg:#dcfce7; --red:#dc2626; --red-bg:#fee2e2; --amber:#b45309; --amber-bg:#fef3c7; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color:var(--ink);
+         background:var(--bg); line-height:1.45; }
+  header { background:#0f172a; color:#fff; padding:28px 40px; }
+  header h1 { margin:0 0 4px; font-size:22px; }
+  header p { margin:0; color:#cbd5e1; font-size:13px; }
+  main { max-width:1100px; margin:0 auto; padding:24px 40px 60px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 24px; margin-bottom:20px; }
+  h2 { font-size:17px; margin:0 0 12px; }
+  .verdict { display:flex; align-items:center; gap:20px; }
+  .badge { font-weight:800; font-size:26px; padding:10px 22px; border-radius:10px; letter-spacing:.04em; }
+  .ship { background:var(--green-bg); color:var(--green); }
+  .blocked { background:var(--red-bg); color:var(--red); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+  td.num, th.num { text-align:right; font-variant-numeric: tabular-nums; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; }
+  .PASS { background:var(--green-bg); color:var(--green); } .FAIL { background:var(--red-bg); color:var(--red); }
+  .SKIP { background:#f3f4f6; color:var(--muted); }
+  .warn { background:var(--amber-bg); color:var(--amber); padding:10px 14px; border-radius:8px; font-size:13px; margin-top:10px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:16px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .bad { color:var(--red); font-weight:600; } .good { color:var(--green); font-weight:600; }
+  .example { border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:12px; }
+  .example .q { font-weight:600; margin-bottom:6px; }
+  .answers { display:grid; grid-template-columns:1fr 1fr; gap:12px; font-size:13px; }
+  .answers div { background:#f9fafb; border-radius:8px; padding:8px 10px; }
+  ul { margin:6px 0 0 18px; padding:0; }
+  footer { text-align:center; color:var(--muted); font-size:12px; }
+  @media (max-width: 700px) { main, header { padding-left:16px; padding-right:16px; } .answers { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>GoldenGate release report · {{ run.meta.release.release_id }}</h1>
+  <p>Accuracy, hallucination &amp; bias regression suite · generated {{ generated }} · run {{ run.meta.run_id }}</p>
+</header>
+<main>
+
+<section>
+  <div class="verdict">
+    <div class="badge {{ 'ship' if gates.verdict == 'SHIP' else 'blocked' }}">{{ gates.verdict }}</div>
+    <div>
+      <h2 style="margin:0">Executive summary</h2>
+      {% set failed = gates.gates | selectattr('status', 'equalto', 'FAIL') | list %}
+      <p style="margin:4px 0 0">
+      {% if gates.verdict == 'SHIP' %}
+        <strong>{{ run.meta.release.release_id }}</strong> passes all {{ gates.gates | length }} release gates
+        {% if baseline %}against baseline <strong>{{ baseline.meta.release.release_id }}</strong>{% endif %}.
+        Accuracy is {{ pct(run.metric('accuracy')) }}, hallucination rate {{ pct(run.metric('hallucination_rate')) }},
+        and the largest gap between user segments is {{ pct(run.metric('max_slice_gap')) }}.
+      {% else %}
+        <strong>{{ run.meta.release.release_id }}</strong> is blocked by {{ failed | length }} of {{ gates.gates | length }} gates
+        {% if baseline %}compared with baseline <strong>{{ baseline.meta.release.release_id }}</strong>{% endif %}.
+        Accuracy is {{ pct(run.metric('accuracy')) }}, hallucination rate {{ pct(run.metric('hallucination_rate')) }},
+        and the largest gap between user segments is {{ pct(run.metric('max_slice_gap')) }}.
+      {% endif %}
+      </p>
+    </div>
+  </div>
+  {% if gates.reasons %}
+  <ul>{% for r in gates.reasons %}<li class="bad">{{ r }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% for w in gates.warnings %}<div class="warn">⚠ {{ w }}</div>{% endfor %}
+  {% for w in run.meta.warnings %}<div class="warn">⚠ {{ w }}</div>{% endfor %}
+  <p class="muted" style="margin-top:12px">
+    Model <strong>{{ run.meta.release.model }}</strong> · prompt hash <code>{{ run.meta.release.prompt_hash }}</code> ·
+    golden <strong>{{ run.meta.golden_version }}</strong> · judge {{ run.meta.judges_used | join(', ') }} ·
+    commit <code>{{ run.meta.git_commit }}</code> · {{ run.meta.n_items }} items
+  </p>
+</section>
+
+<section>
+  <h2>Release gates</h2>
+  <table>
+    <tr><th>Gate</th><th>Result</th><th>Details</th></tr>
+    {% for g in gates.gates %}
+    <tr><td><code>{{ g.id }}</code><div class="muted">{{ g.description }}</div></td>
+        <td><span class="pill {{ g.status }}">{{ g.status }}</span></td><td>{{ g.message }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+
+<section>
+  <h2>Key metrics {% if baseline %}vs {{ baseline.meta.release.release_id }}{% endif %}</h2>
+  <table>
+    <tr><th>Metric</th>{% if baseline %}<th class="num">Baseline</th>{% endif %}<th class="num">Current</th>
+        <th class="num">95% CI</th>{% if baseline %}<th class="num">Δ (95% CI)</th>{% endif %}</tr>
+    {% for name, label, value, d in headline %}
+    {% set mv = run.metrics.get(name) %}
+    <tr><td>{{ label }}</td>
+      {% if baseline %}<td class="num">{{ fmt_metric(name, d.baseline if d else None) }}</td>{% endif %}
+      <td class="num"><strong>{{ fmt_metric(name, value) }}</strong></td>
+      <td class="num muted">{% if mv and mv.ci_low is not none %}{{ pct(mv.ci_low) }} – {{ pct(mv.ci_high) }}{% else %}–{% endif %}</td>
+      {% if baseline %}<td class="num {{ 'bad' if d and d.regression else '' }}">{{ fmt_delta(name, d.delta, d.delta_ci_low, d.delta_ci_high) if d else '–' }}</td>{% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="muted">Confidence intervals are percentile bootstrap intervals over items; deltas use a paired bootstrap on the items shared by both runs. A delta whose interval excludes zero is treated as a real change.</p>
+</section>
+
+<section>
+  <h2>Trends across releases</h2>
+  <div class="grid">{% for c in charts %}<div>{{ c | safe }}</div>{% endfor %}</div>
+  <p class="muted">Dashed red lines are gate thresholds. Each point is the latest run of a release.</p>
+</section>
+
+{% if comparison %}
+<section>
+  <h2>Top regressions ({{ comparison.newly_failing | length }} newly failing items)</h2>
+  {% if not examples %}<p class="good">No item that passed in the baseline fails in this release.</p>{% endif %}
+  {% for ex in examples %}
+  <div class="example">
+    <div class="q">{{ ex.question }} {% if ex.critical %}<span class="pill FAIL">critical</span>{% endif %}</div>
+    <div class="muted">{{ ex.item_id }} · {{ ex.category }} · {{ ex.reasons | join('; ') }}</div>
+    <div class="answers" style="margin-top:8px">
+      <div><strong>Baseline</strong><br>{{ ex.baseline_answer }}</div>
+      <div><strong>Current</strong><br>{{ ex.current_answer }}</div>
+    </div>
+  </div>
+  {% endfor %}
+  {% if comparison.newly_passing %}<p class="good">{{ comparison.newly_passing | length }} items that failed in the baseline now pass.</p>{% endif %}
+</section>
+{% endif %}
+
+<section>
+  <h2>Fairness findings</h2>
+  <p>Max accuracy gap <strong>{{ pct(fairness.max_accuracy_gap) }}</strong> ({{ fairness.max_accuracy_gap_dimension or '–' }}),
+     max refusal-rate gap <strong>{{ pct(fairness.max_refusal_gap) }}</strong> ({{ fairness.max_refusal_gap_dimension or '–' }}),
+     counterfactual consistency <strong>{{ pct(fairness.counterfactual_consistency) }}</strong>
+     (minimum slice size {{ fairness.min_slice_size }}).</p>
+  {% if fairness.flagged %}
+  <p class="bad">Statistically significant gaps:</p>
+  <ul>{% for f in fairness.flagged %}<li>{{ f }}</li>{% endfor %}</ul>
+  {% else %}<p class="good">No statistically significant gap above the threshold.</p>{% endif %}
+  <table style="margin-top:12px">
+    <tr><th>Dimension</th><th>Slice</th><th class="num">n</th><th class="num">Accuracy</th><th class="num">Refusal</th>
+        <th class="num">Helpfulness</th><th class="num">Avg words</th></tr>
+    {% for s in fairness.slices %}
+    <tr><td>{{ s.dimension }}</td><td>{{ s.value }}{% if s.below_min_size %} <span class="pill SKIP">small</span>{% endif %}</td>
+      <td class="num">{{ s.n }}</td><td class="num">{{ pct(s.metrics.accuracy) }}</td>
+      <td class="num">{{ pct(s.metrics.refusal_rate) }}</td><td class="num">{{ pct(s.metrics.helpfulness) }}</td>
+      <td class="num">{{ '%.1f' % s.metrics.answer_words }}</td></tr>
+    {% endfor %}
+  </table>
+  {% for g in flagged_groups %}
+  <div class="example" style="margin-top:12px">
+    <div class="q">Inconsistent counterfactual group {{ g.group }} – {{ g.differences | join('; ') }}</div>
+    {% for v in g.variants %}
+    <div class="muted" style="margin-top:6px"><strong>{{ v.slice_value }}</strong> · {{ v.question }}</div>
+    <div style="font-size:13px">{{ v.answer }}</div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  <p class="muted">Segments are synthetic test personas (names, age, language proficiency, tier, region, disability cues).
+  Each counterfactual group changes only the persona cue, so the correct answer is identical; differences indicate unequal treatment.
+  These checks do not use real customer data.</p>
+</section>
+
+<footer>GoldenGate · versioned golden set · offline and LLM judges · release gates</footer>
+</main>
+</body>
+</html>

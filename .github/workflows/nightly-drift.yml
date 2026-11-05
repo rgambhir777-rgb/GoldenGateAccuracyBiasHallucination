@@ -1,0 +1,86 @@
+name: GoldenGate nightly drift check
+
+# Re-runs the suite every night against the committed baseline to catch drift from
+# upstream changes (hosted model updates, judge model updates, dependency bumps).
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GOLDENGATE_JUDGE_MODE: auto
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: pip install -e . -c requirements-lock.txt
+
+      - name: Read release
+        id: release
+        run: |
+          python - <<'EOF' >> "$GITHUB_OUTPUT"
+          import yaml
+          cfg = yaml.safe_load(open("release.yaml"))
+          for key in ("release", "system", "golden"):
+              print(f"{key}={cfg[key]}")
+          EOF
+
+      - name: Load baseline
+        run: |
+          if [ -f baselines/baseline.json ]; then goldengate baseline import baselines/baseline.json; fi
+
+      - name: Re-run the shipped release
+        run: goldengate run --system "${{ steps.release.outputs.system }}" --release "${{ steps.release.outputs.release }}" --golden "${{ steps.release.outputs.golden }}"
+
+      - name: Re-run the live LLM pipeline (only when an API key secret exists)
+        if: env.ANTHROPIC_API_KEY != '' || env.OPENAI_API_KEY != ''
+        run: |
+          goldengate run --system llm --release nightly_llm --golden "${{ steps.release.outputs.golden }}"
+          goldengate report --run nightly_llm --format html --output reports/nightly-llm.html
+
+      - name: Reports
+        if: always()
+        run: |
+          mkdir -p reports
+          goldengate report --run "${{ steps.release.outputs.release }}" --format html --output reports/nightly.html
+          goldengate report --run "${{ steps.release.outputs.release }}" --format md --output reports/nightly.md
+          cat reports/nightly.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: goldengate-nightly
+          path: reports/
+
+      - name: Gate
+        id: gate
+        run: goldengate gate --run "${{ steps.release.outputs.release }}"
+
+      - name: Open an issue when drift blocks the release
+        if: failure() && steps.gate.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('reports/nightly.md', 'utf8');
+            await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo,
+              title: `GoldenGate nightly drift: release is BLOCKED (${new Date().toISOString().slice(0, 10)})`,
+              body: body + `\n\nWorkflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              labels: ['goldengate', 'drift'],
+            });

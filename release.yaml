@@ -1,0 +1,7 @@
+# The release under test on this branch. CI evaluates `system`, records it as `release`,
+# and gates it against the committed baseline (baselines/baseline.json).
+# Change `system` (and `release`) in a pull request to evaluate a new release.
+release: release_1.3
+system: release_1.3          # release_1.0..1.3, llm, http:<config.yaml> or replay:<outputs.jsonl>
+golden: v2
+baseline_release: release_1.0  # evaluated on the fly if baselines/baseline.json is missing

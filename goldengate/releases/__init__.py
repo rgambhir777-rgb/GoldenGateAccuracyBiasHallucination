@@ -1,0 +1,1 @@
+"""GoldenGate releases package."""
