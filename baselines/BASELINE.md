@@ -1,7 +1,7 @@
 <!-- goldengate-report -->
 ## 🟢 GoldenGate: `release_1.3` is **SHIP**
 
-Baseline **`release_1.3`** · golden **v2** · judge **offline** · commit `8bd9ac71a46d` · 190 items
+Baseline **`release_1.3`** · golden **v2** · judge **offline** · commit `b9f8d3fcf4e2` · 190 items
 
 > ⚠️ Current run is the baseline run; delta gates compare the run with itself.
 
