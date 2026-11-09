@@ -1,0 +1,13 @@
+# Allow-list: nothing enters the build context unless named here, so .env,
+# data/, .venv/ and dist/GoldenGate.exe can never reach the image.
+*
+!pyproject.toml
+!requirements-lock.txt
+!goldengate/
+!corpus/
+!golden/
+!rubrics/
+!gates.yaml
+!frontend/dist/
+**/__pycache__/
+**/*.pyc
