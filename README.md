@@ -12,6 +12,8 @@ A golden dataset with accuracy, groundedness, citation and fairness-slice metric
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for component and pipeline diagrams (Mermaid).
 
+**Live demo:** https://rgambhir777--goldengate.us-east.modal.run (no login, offline judge; the first visit takes about 10 seconds while the container starts, and the demo resets after 10 idle minutes).
+
 ---
 
 ## Quick start (3 steps)
@@ -298,6 +300,7 @@ baselines/          committed CI baseline run
 docs/               ARCHITECTURE.md, example_pr_comment.md
 .github/workflows/  regression-suite, record-baseline, nightly-drift
 gates.yaml  release.yaml  .env.example  start.* run_suite.*  build_exe.bat  GoldenGate.spec
+Dockerfile  .dockerignore  modal_app.py
 ```
 
 Runtime state is written to `data/` (SQLite `goldengate.db`, `runs/*.json`, `reports/`) and `.env`; both are git-ignored.
@@ -321,6 +324,31 @@ The unit tests cover: golden schema validation, diff, freeze and the hash check;
 * **Pinned dependencies**: exact pins in `pyproject.toml`, the full transitive set in `requirements-lock.txt` (used as a constraints file). Every dependency installs from binary wheels on Windows, macOS and Linux for Python 3.11–3.14, so no C compiler is needed, and there are no model downloads.
 * **Windows executable**: `build_exe.bat` builds `dist\GoldenGate.exe` with PyInstaller (`GoldenGate.spec`). Double-click it to seed the demo and open the dashboard; state is kept in `dist\goldengate_workspace\`.
 * **Frontend development** (optional): `cd frontend && npm install && npm run dev` (proxies `/api` to port 8000), then `npm run build` to refresh `frontend/dist`.
+
+### Docker
+
+The image holds the API and the dashboard, with the demo releases seeded at build time. It needs no API keys and runs as an unprivileged user; all writable state lives in `/data`.
+
+```bash
+docker run --rm -p 127.0.0.1:8000:8000 nusoftinc/goldengate:1.0.0-cddeb2a
+# then open http://localhost:8000
+```
+
+Build it yourself with `docker build -t goldengate .`. Add `-v goldengate-data:/data` to keep runs, gate edits and settings between restarts, and `-e ANTHROPIC_API_KEY=...` to enable the LLM judge.
+
+### Modal (public demo)
+
+`modal_app.py` runs the published image on [Modal](https://modal.com) as one on-demand container. It starts on the first request and stops after 10 idle minutes, so you pay only while it runs.
+
+1. Build and publish an image, tagged with the version and the commit:
+   ```bash
+   docker build -t nusoftinc/goldengate:1.0.0-$(git rev-parse --short=7 HEAD) .
+   docker push nusoftinc/goldengate:1.0.0-$(git rev-parse --short=7 HEAD)
+   ```
+2. Set `IMAGE` in `modal_app.py` to that tag.
+3. Run `modal deploy modal_app.py`.
+
+The dashboard has no login, so anyone with the URL can start runs and change gates and settings. No API keys are deployed: the offline judge scores everything, so there is nothing to leak or spend. Stopping the container (`modal container stop -y <id>`) resets the demo to its seeded state.
 
 ---
 
